@@ -70,3 +70,6 @@ pre.rawtext { white-space:pre-wrap; background:var(--soft); border:1px solid var
   .swap a { color:black; }
   pre.rawtext { background:white; color:black; border:1px solid #ccc; }
 }
+.authbox { max-width:430px; margin:30px auto; }
+.authbox a { color:var(--accent-dark); font-weight:bold; }
+.links .who { color:var(--text); font-weight:600; margin-left:10px; }
