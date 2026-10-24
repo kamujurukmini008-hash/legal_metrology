@@ -1,5 +1,6 @@
 
-flask
-opencv-python-headless
-numpy
-pytesseract
+   flask
+   gunicorn
+   opencv-python-headless
+   numpy
+   pytesseract
