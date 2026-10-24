@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <div class="noprint" style="margin-bottom:16px">
+    <button class="btn" onclick="window.print()">Download PDF</button>
+    <a class="btn btn-cyan" href="/history">Back to history</a>
+  </div>
+
+  <h2>Compliance Report</h2>
+  <div class="card">
+    <p><b>Product:</b> {{ row["product"] }}</p>
+    <p><b>Date:</b> {{ row["created"] }}</p>
+    <p><b>Overall result:</b>
+      <span class="{{ 'pass' if row['status'] == 'Compliant' else ('warn' if row['status'] == 'Review Required' else 'fail') }}">{{ row["status"] }}</span>
+      &middot; Score {{ row["score"] }}%</p>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <div style="overflow-x:auto">
+    <table>
+      <tr><th>Rule</th><th>Requirement</th><th>Status</th><th>Evidence found</th></tr>
+      {% for item in result["rows"] %}
+      <tr>
+        <td>{{ item["rule"] }}</td>
+        <td>{{ item["requirement"] }}</td>
+        <td class="{{ 'pass' if item['status'] == 'Detected' else ('warn' if item['status'] == 'Review Required' else ('muted' if item['status'] == 'Not Applicable' else 'fail')) }}">{{ item["status"] }}</td>
+        <td>{{ item["evidence"] }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+  </div>
+
+  {% set g = result.get("ingredients") %}
+  {% if g %}
+  <div class="card" style="margin-top:20px">
+    <h3>Ingredient check: {{ g["verdict"] }}</h3>
+    <p class="note">Ingredients read: {{ g["text"] }}</p>
+    {% if g["flags"] %}
+    <table>
+      <tr><th>Ingredient</th><th>Level</th><th>Why</th></tr>
+      {% for f in g["flags"] %}
+      <tr><td>{{ f["name"] }}</td><td><span class="tag tag-{{ f['level'] }}">{{ f["level"] }}</span></td><td>{{ f["reason"] }}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="good">None of the ingredients we look for were found.</p>
+    {% endif %}
+    {% if g["swaps"] %}
+    <h3 style="margin-top:18px">Healthier swap ideas ({{ g["swaps"]["kind"] }})</h3>
+    {% for i in g["swaps"]["ideas"] %}
+    <div class="swap"><b>{{ i["name"] }}</b><br>Search on:
+      {% for l in i["links"] %}<a href="{{ l['url'] }}" target="_blank" rel="noopener">{{ l["store"] }}</a>{% endfor %}
+    </div>
+    {% endfor %}
+    {% endif %}
+    <p class="note">{{ g["note"] }}</p>
+  </div>
+  {% endif %}
+
+  {% set bc = result.get("barcode") %}
+  {% if bc %}
+  <div class="card" style="margin-top:20px">
+    <h3>Barcode</h3>
+    <p><b>Number:</b> {{ bc["code"] }}{% if bc["country"] %} &middot; registered in {{ bc["country"] }}{% endif %}</p>
+    {% if bc["note"] %}<p class="note">{{ bc["note"] }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-top:20px">
+    <h3>Text read from the label</h3>
+    <pre class="rawtext">{{ row["text"] }}</pre>
+  </div>
+
+  <p class="note">This report is a preliminary screening aid, not a substitute for authorised legal inspection.</p>
+</div>
+{% endblock %}

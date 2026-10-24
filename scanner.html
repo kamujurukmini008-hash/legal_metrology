@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>Label Scanner</h2>
+
+  <div class="card" style="margin-bottom:20px">
+    <h3>Barcode (optional)</h3>
+    <p class="note" style="margin-top:0">Type the number under the bars, read it from a photo, or use your webcam. The product name, size and ingredients are filled in if the product is in the free Open Food Facts database.</p>
+    <label for="barcode">Barcode number</label>
+    <input type="text" id="barcode" inputmode="numeric" placeholder="e.g. 8901030895555">
+    <button class="btn" id="barcodeBtn">Look up barcode</button>
+    <label for="barcodeFile">Or read the barcode from a photo</label>
+    <input type="file" id="barcodeFile" accept="image/*">
+    <button class="btn btn-cyan" id="barcodePhotoBtn">Read barcode from photo</button>
+    <button class="btn btn-cyan" id="camBtn">Use webcam</button>
+    <button class="btn btn-red" id="camStopBtn" style="display:none">Stop webcam</button>
+    <video id="cam" playsinline muted style="display:none; width:100%; max-width:420px; border-radius:12px; margin-top:10px"></video>
+    <p id="barcodeStatus" class="note"></p>
+  </div>
+  <div class="card">
+    <label for="product">Product name</label>
+    <input type="text" id="product" placeholder="e.g. Sketch O Fine pens">
+
+    <label for="category">Product type</label>
+    <select id="category">
+      <option value="auto">Auto-detect (recommended)</option>
+      <option value="general">Non-perishable (pens, stationery, etc.) - no expiry needed</option>
+      <option value="perishable">Perishable (food, medicine, cosmetics) - check expiry</option>
+    </select>
+
+    <label for="file">Upload label photos - you can pick several close-ups (keep the text upright and sharp)</label>
+    <input type="file" id="file" accept="image/*" multiple>
+    <p class="note">Tip: use the original photo from your phone camera. Photos sent through WhatsApp are shrunk and read badly.</p>
+
+    <button class="btn" id="scanBtn">1. Read Label (OCR)</button>
+    <p id="status" class="note"></p>
+
+    <label for="text">Text read from the label (you can edit or paste it)</label>
+    <textarea id="text" rows="8" placeholder="Label text will appear here..."></textarea>
+
+    <button class="btn" id="extractBtn">2. Find the details</button>
+    <button class="btn btn-cyan" id="sampleFood">Sample: food</button>
+    <button class="btn btn-cyan" id="samplePen">Sample: pens</button>
+    <button class="btn btn-cyan" id="sampleImport">Sample: imported</button>
+  </div>
+
+  <div class="card" id="verify" style="margin-top:20px; display:none">
+    <h3>3. Verify the details</h3>
+    <div id="ocrNotes" class="swap" style="display:none; border-color:var(--orange)"></div>
+    <p class="note">Compare with the pack. Correct any wrong or empty box - the report uses exactly what you confirm here.</p>
+    <label for="f_name">Commodity name</label>
+    <input type="text" id="f_name" placeholder="e.g. Sketch O Fine">
+    <label for="f_manufacturer">Manufacturer / Packer / Importer (name, address, 6-digit PIN)</label>
+    <input type="text" id="f_manufacturer" placeholder="e.g. ABC Foods Pvt Ltd, Hyderabad - 500001">
+    <label for="f_quantity">Net quantity</label>
+    <input type="text" id="f_quantity" placeholder="e.g. 50 g, 1 L, 12 Units">
+    <label for="f_mrp">MRP</label>
+    <input type="text" id="f_mrp" placeholder="e.g. Rs. 30.00">
+    <label for="f_taxes">Does the pack say MRP is inclusive of all taxes?</label>
+    <select id="f_taxes">
+      <option value="unknown">Not sure</option>
+      <option value="yes">Yes - inclusive of all taxes</option>
+      <option value="no">No - taxes extra</option>
+    </select>
+    <label for="f_date">Month and year of manufacture / packing</label>
+    <input type="text" id="f_date" placeholder="e.g. 10/2025">
+    <label for="f_care">Consumer care (phone / email)</label>
+    <input type="text" id="f_care" placeholder="e.g. 1800-123-456, care@brand.com">
+    <label for="f_country">Country of origin</label>
+    <input type="text" id="f_country" placeholder="e.g. India">
+    <label for="f_expiry">Expiry / best before (food, medicine, cosmetics only)</label>
+    <input type="text" id="f_expiry" placeholder="e.g. 6 months from manufacture, or 04/2027">
+    <label for="f_ingredients">Ingredients (food only - leave empty for pens, toys, etc.)</label>
+    <textarea id="f_ingredients" rows="3" placeholder="e.g. Potato, Palm Oil, Sugar, Salt, Flavour Enhancer (627, 631)"></textarea>
+    <label><input type="checkbox" id="f_imported"> This product is imported</label>
+    <br>
+    <button class="btn" id="checkBtn">4. Check Compliance</button>
+  </div>
+
+  <div class="card" id="result" style="margin-top:20px; display:none">
+    <h3 id="verdict"></h3>
+    <p>Score: <b id="score"></b>%</p>
+    <div style="overflow-x:auto"><table id="detailTable"></table></div>
+    <div id="ingBox"></div>
+    <p style="margin-top:14px"><a class="btn" id="reportLink" href="#">View full report</a></p>
+    <p class="note">This tool is a screening aid, not a substitute for authorised legal inspection.</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script>
+const statusEl = document.getElementById("status");
+let ocrNotes = [];
+const colors = {"Detected":"#5f8a5f", "Missing":"#b5523f", "Review Required":"#b8862f", "Potential Non-Compliance":"#b5523f", "Not Applicable":"#8c7e6a"};
+const verdictColors = {"Compliant":"#5f8a5f", "Review Required":"#b8862f", "Non-Compliant":"#b5523f"};
+
+let barcodeInfo = null;
+let zxingReader = null;
+
+function barcodeNotes() {
+  if (!barcodeInfo) return [];
+  const notes = [];
+  const countryBox = document.getElementById("f_country").value.trim().toLowerCase();
+  if (barcodeInfo.country) {
+    let msg = "Barcode " + barcodeInfo.code + " was registered in " + barcodeInfo.country + " (the barcode prefix shows where the code was registered, not always where the product was made).";
+    const bc = barcodeInfo.country.toLowerCase();
+    if (countryBox && countryBox.indexOf(bc.split(" ")[0]) === -1 && bc.indexOf(countryBox) === -1) {
+      msg = "Check country: the barcode says " + barcodeInfo.country + " but the label says " + document.getElementById("f_country").value.trim() + ". This can be normal (made in one country, sold under another), but please confirm.";
+    }
+    notes.push(msg);
+  }
+  if (barcodeInfo.found) notes.push("Some boxes were filled from the Open Food Facts database. Compare them with the pack, because database entries can be old.");
+  return notes;
+}
+
+function applyBarcode() {
+  if (!barcodeInfo || !barcodeInfo.product) return;
+  const p = barcodeInfo.product;
+  const put = (id, v) => { const el = document.getElementById(id); if (v && !el.value.trim()) el.value = v; };
+  put("f_name", p.name);
+  put("f_quantity", p.quantity);
+  put("f_ingredients", p.ingredients);
+}
+
+function showNotes() {
+  const notes = ocrNotes.concat(barcodeNotes());
+  const nb = document.getElementById("ocrNotes");
+  if (notes.length) {
+    nb.innerHTML = "<b>Please check these:</b><br>" + notes.map(n => "&bull; " + esc(n)).join("<br>");
+    nb.style.display = "block";
+  } else { nb.style.display = "none"; }
+}
+
+async function lookupBarcode(code) {
+  const st = document.getElementById("barcodeStatus");
+  st.textContent = "Looking up barcode...";
+  try {
+    const res = await fetch("/api/barcode", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ code: code })
+    });
+    const data = await res.json();
+    st.textContent = data.message + (data.country ? " Registered in: " + data.country + "." : "");
+    barcodeInfo = data.valid ? data : null;
+    if (barcodeInfo && barcodeInfo.found && !document.getElementById("product").value.trim()) {
+      document.getElementById("product").value = barcodeInfo.product.name || "";
+    }
+    if (document.getElementById("verify").style.display === "block") {
+      applyBarcode();
+      showNotes();
+    } else if (barcodeInfo) {
+      st.textContent += " Now read the label photo and click 2. Find the details.";
+    }
+  } catch (e) {
+    st.textContent = "Barcode lookup failed: " + e.message;
+  }
+}
+
+async function decodeBarcodeFromFile(file) {
+  if ("BarcodeDetector" in window) {
+    try {
+      const bmp = await createImageBitmap(file);
+      const det = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a"] });
+      const found = await det.detect(bmp);
+      if (found.length) return found[0].rawValue;
+    } catch (e) { /* fall back to the library below */ }
+  }
+  if (typeof ZXing === "undefined") throw new Error("Barcode library could not load. Check your internet, or type the number.");
+  const url = URL.createObjectURL(file);
+  try {
+    const reader = new ZXing.BrowserMultiFormatReader();
+    const result = await reader.decodeFromImageUrl(url);
+    return result.getText();
+  } finally { URL.revokeObjectURL(url); }
+}
+
+document.getElementById("barcodeBtn").onclick = () => {
+  lookupBarcode(document.getElementById("barcode").value);
+};
+
+document.getElementById("barcodePhotoBtn").onclick = async () => {
+  const st = document.getElementById("barcodeStatus");
+  const file = document.getElementById("barcodeFile").files[0];
+  if (!file) { st.textContent = "Please choose a photo of the barcode first (keep the bars sharp and straight)."; return; }
+  st.textContent = "Reading barcode from the photo...";
+  try {
+    const code = await decodeBarcodeFromFile(file);
+    document.getElementById("barcode").value = code;
+    lookupBarcode(code);
+  } catch (e) {
+    st.textContent = "Could not read a barcode from this photo. Try a closer, sharper photo, or type the number.";
+  }
+};
+
+function stopCam() {
+  try { if (zxingReader) zxingReader.reset(); } catch (e) {}
+  zxingReader = null;
+  document.getElementById("cam").style.display = "none";
+  document.getElementById("camStopBtn").style.display = "none";
+  document.getElementById("camBtn").style.display = "inline-block";
+}
+
+document.getElementById("camBtn").onclick = async () => {
+  const st = document.getElementById("barcodeStatus");
+  if (typeof ZXing === "undefined") { st.textContent = "Barcode library could not load. Check your internet, or type the number."; return; }
+  try {
+    zxingReader = new ZXing.BrowserMultiFormatReader();
+    document.getElementById("cam").style.display = "block";
+    document.getElementById("camStopBtn").style.display = "inline-block";
+    document.getElementById("camBtn").style.display = "none";
+    st.textContent = "Hold the barcode in front of the camera...";
+    await zxingReader.decodeFromVideoDevice(null, "cam", (result) => {
+      if (result) {
+        const code = result.getText();
+        stopCam();
+        document.getElementById("barcode").value = code;
+        lookupBarcode(code);
+      }
+    });
+  } catch (e) {
+    stopCam();
+    st.textContent = "Could not start the webcam: " + e.message + ". Allow camera access, or type the number.";
+  }
+};
+document.getElementById("camStopBtn").onclick = () => { stopCam(); document.getElementById("barcodeStatus").textContent = "Webcam stopped."; };
+
+function barcodeHtml(b) {
+  if (!b) return "";
+  return "<p class='note'>Barcode: <b>" + esc(b.code) + "</b>" + (b.country ? " (registered in " + esc(b.country) + ")" : "") + "</p>";
+}
+
+function ingredientHtml(g) {
+  if (!g) return "";
+  let h = "<h3 style='margin-top:22px'>Ingredient check: " + esc(g.verdict) + "</h3>";
+  h += "<p class='note'>Ingredients read: " + esc(g.text) + "</p>";
+  if (g.flags.length === 0) {
+    h += "<p class='good'>None of the ingredients we look for were found.</p>";
+  } else {
+    h += "<div style='overflow-x:auto'><table><tr><th>Ingredient</th><th>Level</th><th>Why</th></tr>";
+    g.flags.forEach(f => {
+      h += "<tr><td>" + esc(f.name) + "</td><td><span class='tag tag-" + f.level + "'>" + esc(f.level) + "</span></td><td>" + esc(f.reason) + "</td></tr>";
+    });
+    h += "</table></div>";
+  }
+  if (g.swaps) {
+    h += "<h3 style='margin-top:18px'>Healthier swap ideas (" + esc(g.swaps.kind) + ")</h3>";
+    g.swaps.ideas.forEach(i => {
+      h += "<div class='swap'><b>" + esc(i.name) + "</b><br>Search on: ";
+      i.links.forEach(l => { h += "<a href='" + l.url + "' target='_blank' rel='noopener'>" + esc(l.store) + "</a>"; });
+      h += "</div>";
+    });
+    h += "<p class='note'>These buttons open a search page. Check the price and the ingredients on that product too.</p>";
+  }
+  h += "<p class='note'>" + esc(g.note) + "</p>";
+  return h;
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+
+const samples = {
+  sampleFood: "Product Name: Masala Chips. Manufactured by ABC Foods Pvt Ltd, Plot 5, Hyderabad - 500001. Net Wt 50 g. MRP Rs. 20 inclusive of all taxes. Mfg date 09/2026. Ingredients: Potato, Palm Oil, Refined Wheat Flour (Maida), Sugar, Salt, Flavour Enhancer (INS 627, 631), Colour (INS 102). Best before 6 months from date of manufacture. Customer care: 1800-123-456, care@abcfoods.com. Made in India.",
+  samplePen: "Product Name: Sketch O Fine. Manufactured by: Luxor Writing Instruments Private Limited, Ranipur, Haridwar-249403. Toll Free Number: 18001023855. E-mail: consumercare@luxoroffice.com. Maximum Retail Price (inclusive of all taxes): \u20b930.00. Month & Year of Manufacture: 10/2025. Net Quantity: 12 Units. MADE IN INDIA",
+  sampleImport: "Product Name: Chocolate Spread. Imported by XYZ Traders Pvt Ltd, Mumbai - 400001. Net Wt 350 g. MRP Rs. 450 inclusive of all taxes. Packed on 08/2026. Best before 12/2027. Customer care: 18002223333."
+};
+Object.keys(samples).forEach(id => {
+  document.getElementById(id).onclick = () => {
+    document.getElementById("text").value = samples[id];
+    ocrNotes = [];
+    statusEl.textContent = "Sample loaded.";
+    extractDetails();
+  };
+});
+
+const FIELDS = ["name", "manufacturer", "quantity", "mrp", "date", "care", "country", "expiry", "ingredients"];
+
+async function extractDetails() {
+  const text = document.getElementById("text").value;
+  if (!text.trim()) { statusEl.textContent = "No text yet. Read a photo or paste the label text first."; return; }
+  const res = await fetch("/api/extract", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ text: text })
+  });
+  const data = await res.json();
+  if (!res.ok) { statusEl.textContent = data.error || "Something went wrong."; return; }
+  FIELDS.forEach(k => { document.getElementById("f_" + k).value = data.fields[k] || ""; });
+  const typed = document.getElementById("product").value.trim();
+  if (!data.fields.name && typed) document.getElementById("f_name").value = typed;
+  document.getElementById("f_taxes").value = data.fields.mrp_taxes || "unknown";
+  document.getElementById("f_imported").checked = !!data.fields.imported;
+  applyBarcode();
+  showNotes();
+  FIELDS.forEach(k => {
+    const el = document.getElementById("f_" + k);
+    el.style.borderColor = (!el.value.trim() && k !== "expiry" && k !== "ingredients") ? "var(--orange)" : "";
+  });
+  document.getElementById("verify").style.display = "block";
+  document.getElementById("result").style.display = "none";
+  statusEl.textContent = "Details found. Please verify them below.";
+  document.getElementById("verify").scrollIntoView({behavior: "smooth"});
+}
+document.getElementById("extractBtn").onclick = extractDetails;
+
+if (location.search.indexOf("demo=food") !== -1) { document.getElementById("sampleFood").click(); }
+if (location.search.indexOf("demo=pen") !== -1) { document.getElementById("samplePen").click(); }
+
+function preprocess(file, mode) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = img.width < 2000 ? 2000 / img.width : (img.width > 2600 ? 2600 / img.width : 1);
+      const c = document.createElement("canvas");
+      c.width = img.width * scale;
+      c.height = img.height * scale;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      const d = ctx.getImageData(0, 0, c.width, c.height);
+      for (let i = 0; i < d.data.length; i += 4) {
+        const gray = 0.299 * d.data[i] + 0.587 * d.data[i+1] + 0.114 * d.data[i+2];
+        let v;
+        if (mode === "light") { v = gray > 150 ? 0 : 255; }
+        else if (mode === "dark") { v = gray > 120 ? 255 : 0; }
+        else { v = gray; }
+        d.data[i] = d.data[i+1] = d.data[i+2] = v;
+      }
+      ctx.putImageData(d, 0, 0);
+      c.toBlob(resolve);
+    };
+    img.onerror = () => reject(new Error("Could not open this image"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function serverOcr(files) {
+  const fd = new FormData();
+  files.slice(0, 6).forEach(f => fd.append("images", f));
+  fd.append("product", document.getElementById("product").value);
+  const res = await fetch("/api/ocr", { method: "POST", body: fd });
+  if (!res.ok) throw new Error("server OCR not available");
+  return await res.json();
+}
+
+async function browserOcr(files) {
+  if (typeof Tesseract === "undefined") throw new Error("OCR library could not load. Check your internet connection and refresh.");
+  const worker = await Tesseract.createWorker("eng");
+  await worker.setParameters({ tessedit_pageseg_mode: "11" });
+  const modes = ["light", "dark", "gray"];
+  let allText = "";
+  for (let f = 0; f < files.length; f++) {
+    for (let i = 0; i < modes.length; i++) {
+      statusEl.textContent = "Photo " + (f + 1) + " of " + files.length + ", reading pass " + (i + 1) + " of 3... please wait";
+      const img = await preprocess(files[f], modes[i]);
+      const result = await worker.recognize(img);
+      allText += result.data.text + "\n";
+    }
+  }
+  await worker.terminate();
+  return { text: allText, notes: [] };
+}
+
+document.getElementById("scanBtn").onclick = async () => {
+  const files = Array.from(document.getElementById("file").files);
+  if (files.length === 0) { statusEl.textContent = "Please choose an image first."; return; }
+  const btn = document.getElementById("scanBtn");
+  btn.disabled = true;
+  if (window.metroBot) metroBot.start();
+  let data = null;
+  try {
+    statusEl.textContent = "Reading label on the server... this can take 20-60 seconds. Please wait.";
+    try {
+      data = await serverOcr(files);
+    } catch (e) {
+      statusEl.textContent = "Server reader not available, reading in your browser instead...";
+      data = await browserOcr(files);
+    }
+    document.getElementById("text").value = data.text;
+    ocrNotes = data.notes || [];
+    statusEl.textContent = "Done! Now click 2. Find the details.";
+    if (window.metroBot) metroBot.stop(true);
+  } catch (e) {
+    statusEl.textContent = "OCR failed: " + e.message + ". You can type or paste the label text instead.";
+    if (window.metroBot) metroBot.stop(false, e.message);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+document.getElementById("checkBtn").onclick = async () => {
+  const fields = {};
+  FIELDS.forEach(k => { fields[k] = document.getElementById("f_" + k).value; });
+  fields.mrp_taxes = document.getElementById("f_taxes").value;
+  fields.imported = document.getElementById("f_imported").checked;
+  const res = await fetch("/api/check", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      text: document.getElementById("text").value,
+      category: document.getElementById("category").value,
+      fields: fields,
+      barcode: barcodeInfo ? { code: barcodeInfo.code, country: barcodeInfo.country, note: barcodeNotes().join(" ") } : null
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) { statusEl.textContent = data.error || "Something went wrong."; return; }
+  document.getElementById("result").style.display = "block";
+  const v = document.getElementById("verdict");
+  v.textContent = data.status;
+  v.style.color = verdictColors[data.status];
+  document.getElementById("score").textContent = data.score;
+  document.getElementById("reportLink").href = "/report/" + data.id;
+  let rows = "<tr><th>Rule</th><th>Requirement</th><th>Status</th><th>Evidence found</th></tr>";
+  for (const r of data.rows) {
+    rows += "<tr><td>" + esc(r.rule) + "</td><td>" + esc(r.requirement) + "</td>" +
+            "<td style='color:" + colors[r.status] + "; font-weight:bold'>" + esc(r.status) + "</td>" +
+            "<td>" + esc(r.evidence) + "</td></tr>";
+  }
+  document.getElementById("detailTable").innerHTML = rows;
+  document.getElementById("ingBox").innerHTML = ingredientHtml(data.ingredients) + barcodeHtml(data.barcode);
+  document.getElementById("result").scrollIntoView({behavior: "smooth"});
+  if (window.metroBot) metroBot.say("Result ready", data.status + " - score " + data.score + "%");
+};
+</script>
+{% endblock %}

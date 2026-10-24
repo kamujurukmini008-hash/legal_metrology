@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>Scan History</h2>
+
+  <div class="noprint" style="margin-bottom:16px">
+    <button class="btn" onclick="window.print()">Print / Save as PDF</button>
+    <button class="btn btn-red" onclick="clearAll()">Clear all history</button>
+  </div>
+
+  <div class="card">
+    {% if rows %}
+    <div style="overflow-x:auto">
+    <table>
+      <tr><th>#</th><th>Product</th><th>Score</th><th>Status</th><th>Date</th><th class="noprint">Actions</th></tr>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row["id"] }}</td>
+        <td>{{ row["product"] }}</td>
+        <td>{{ row["score"] }}%</td>
+        <td class="{{ 'pass' if row['status'] == 'Compliant' else ('warn' if row['status'] == 'Review Required' else 'fail') }}">{{ row["status"] }}</td>
+        <td>{{ row["created"] }}</td>
+        <td class="noprint">
+          <a class="btn btn-sm btn-cyan" href="/report/{{ row['id'] }}">View</a>
+             <button class="btn btn-sm btn-red" data-id="{{ row['id'] }}" onclick="delOne(this.dataset.id)">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    </div>
+    {% else %}
+    <p>No scans yet. Go to the Scanner and check a label.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function delOne(id) {
+  if (!confirm("Delete this scan?")) return;
+  fetch("/api/delete/" + id, { method: "POST" }).then(() => location.reload());
+}
+function clearAll() {
+  if (!confirm("Delete ALL scan history?")) return;
+  fetch("/api/clear", { method: "POST" }).then(() => location.reload());
+}
+</script>
+{% endblock %}

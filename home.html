@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="hero">
+  <h1>Check Packaged Commodity Labels in Seconds</h1>
+  <p>Scan a product label and see whether it carries the declarations required by the Legal Metrology (Packaged Commodities) Rules, 2011.</p>
+  <a class="btn" href="/scanner">Start Scanning</a>
+  <a class="btn btn-cyan" href="/dashboard">View Dashboard</a>
+</div>
+<div class="container">
+  <h2>Why this matters</h2>
+  <div class="card">
+    <p>Every packed product must show the details the law asks for - who made it, how much is inside, the real price (MRP) and more. Missing or wrong details can cheat buyers. Checking labels by hand is slow, so this tool does a quick first check and shows the evidence for every result.</p>
+  </div>
+
+  <h2>How it works</h2>
+  <div class="grid">
+    <div class="card"><h3>1. Upload</h3><p>Upload or capture a photo of the product label.</p></div>
+    <div class="card"><h3>2. Read</h3><p>The image is cleaned and OCR reads the label text.</p></div>
+    <div class="card"><h3>3. Check</h3><p>A rule engine checks each mandatory declaration.</p></div>
+    <div class="card"><h3>4. Report</h3><p>Get a status for every field, with evidence, and print it as a PDF.</p></div>
+  </div>
+
+  <h2>What we check</h2>
+  <div class="grid">
+    <div class="card">Commodity name</div>
+    <div class="card">Manufacturer / packer / importer</div>
+    <div class="card">Net quantity</div>
+    <div class="card">MRP (inclusive of all taxes)</div>
+    <div class="card">Month and year of manufacture</div>
+    <div class="card">Consumer care details</div>
+    <div class="card">Country of origin</div>
+    <div class="card">Expiry date (food, medicine, cosmetics)</div>
+  </div>
+
+  <h2>Healthy ingredient check</h2>
+  <div class="card">
+    <p>For food products, we also read the ingredients, warn about items like trans fat, artificial colours and too much sugar, and suggest healthier swaps with search links for Amazon, Blinkit and Zepto.</p>
+  </div>
+
+  <h2>Result statuses</h2>
+  <div class="card">
+    <p><span class="pass">Detected</span> &middot; <span class="fail">Missing</span> &middot; <span class="warn">Review Required</span> &middot; <span class="fail">Potential Non-Compliance</span></p>
+    <p class="note">This tool is a screening aid, not a substitute for authorised legal inspection.</p>
+  </div>
+
+  <h2>Limitations</h2>
+  <div class="card">
+    <p>Reading text from photos (OCR) can make mistakes, especially on shiny, colourful or blurry labels, so you verify the details before the final check. Rules are based on the Legal Metrology (Packaged Commodities) Rules, 2011 and should be confirmed against the official text. Ingredient advice is general awareness, not medical advice. Swap links open search pages and do not show live prices.</p>
+  </div>
+</div>
+{% endblock %}

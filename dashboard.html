@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container">
+  <h2>Dashboard</h2>
+  <div class="grid">
+    <div class="card stat"><p>Total scans</p><div class="num" id="total">0</div></div>
+    <div class="card stat"><p>Compliant</p><div class="num pass" id="ok">0</div></div>
+    <div class="card stat"><p>Review Required</p><div class="num warn" id="rev">0</div></div>
+    <div class="card stat"><p>Non-compliant</p><div class="num fail" id="bad">0</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><h3>Scan results</h3><canvas id="pie"></canvas></div>
+    <div class="card"><h3>Rules needing attention</h3><canvas id="bar"></canvas></div>
+  </div>
+  <p id="empty" class="note" style="display:none">No scans yet. Go to the Scanner and check a label to see charts here.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+fetch("/api/stats").then(r => r.json()).then(d => {
+  document.getElementById("total").textContent = d.total;
+  document.getElementById("ok").textContent = d.compliant;
+  document.getElementById("rev").textContent = d.review;
+  document.getElementById("bad").textContent = d.non_compliant;
+  if (d.total === 0) { document.getElementById("empty").style.display = "block"; }
+  if (typeof Chart === "undefined") { return; }
+
+   Chart.defaults.color = "#8c7e6a";
+
+  new Chart(document.getElementById("pie"), {
+    type: "doughnut",
+    data: { labels: ["Compliant", "Review Required", "Non-compliant"],
+            datasets: [{ data: [d.compliant, d.review, d.non_compliant],
+                                                   backgroundColor: ["#5f8a5f", "#d9c7a8", "#b5523f"], borderWidth: 0 }] }
+  });
+
+  new Chart(document.getElementById("bar"), {
+    type: "bar",
+    data: { labels: Object.keys(d.failures),
+            datasets: [{ label: "Times flagged", data: Object.values(d.failures),
+                                                 backgroundColor: ["#8b6f47","#d9c7a8","#b8a07a","#c9b48f","#a58b62","#e3d5bc","#9c8460","#bfa77e"] }] },
+    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+  });
+});
+</script>
+{% endblock %}
