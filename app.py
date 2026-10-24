@@ -1,7 +1,8 @@
 import os
 import json
 import sqlite3
-from flask import Flask, render_template, request, jsonify, abort
+from flask import Flask, render_template, request, jsonify, abort, session, redirect, url_for
+from werkzeug.security import generate_password_hash, check_password_hash
 import barcodes
 from ingredients import analyze
 from rules import check_label, check_fields, extract_fields, is_perishable
@@ -13,6 +14,8 @@ FIELD_NAMES = ("name", "manufacturer", "quantity", "mrp", "mrp_taxes",
                "date", "care", "country", "expiry", "ingredients")
 
 app = Flask(__name__)
+# Secret key signs the login cookie. Change this text to anything long and private.
+app.secret_key = os.environ.get("SECRET_KEY", "change-this-to-a-long-random-text-123")
 
 # Server-side label reader (needs opencv + pytesseract + Tesseract installed).
 # If it is not installed, the scanner page falls back to reading in the browser.
@@ -36,11 +39,107 @@ def init_db():
         product TEXT, text TEXT, score INTEGER,
         status TEXT, result TEXT,
         created TEXT DEFAULT (datetime('now','localtime')))""")
+    con.execute("""CREATE TABLE IF NOT EXISTS users(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT, email TEXT UNIQUE, password TEXT,
+        created TEXT DEFAULT (datetime('now','localtime')))""")
     con.commit()
     con.close()
 
 
 init_db()
+
+
+# ---------- login protection ----------
+# These pages can be opened without logging in. Everything else needs a login.
+OPEN_PATHS = ("/", "/login", "/signup", "/logout")
+
+
+@app.before_request
+def require_login():
+    path = request.path
+    if path in OPEN_PATHS or path.startswith("/static/"):
+        return None
+    if session.get("user_id"):
+        return None
+    if path.startswith("/api/"):
+        return jsonify({"error": "Please log in first"}), 401
+    return redirect(url_for("login", next=path))
+
+
+@app.context_processor
+def inject_user():
+    return {"user_name": session.get("user_name")}
+
+
+def safe_next(target):
+    # only allow going to a page inside this website
+    if target and target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for("scanner")
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if session.get("user_id"):
+        return redirect(url_for("scanner"))
+    error = ""
+    name = email = ""
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        confirm = request.form.get("confirm", "")
+        if not name or not email or not password:
+            error = "Please fill in every box."
+        elif "@" not in email or "." not in email:
+            error = "Please enter a valid email."
+        elif len(password) < 6:
+            error = "Password must have at least 6 characters."
+        elif password != confirm:
+            error = "The two passwords do not match."
+        else:
+            con = get_db()
+            exists = con.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+            if exists:
+                error = "This email is already registered. Please log in."
+            else:
+                cur = con.execute("INSERT INTO users(name, email, password) VALUES (?,?,?)",
+                                  (name, email, generate_password_hash(password)))
+                con.commit()
+                session["user_id"] = cur.lastrowid
+                session["user_name"] = name
+                con.close()
+                return redirect(url_for("scanner"))
+            con.close()
+    return render_template("signup.html", error=error, name=name, email=email)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("user_id"):
+        return redirect(url_for("scanner"))
+    error = ""
+    email = ""
+    nxt = request.values.get("next", "")
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        con = get_db()
+        user = con.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        con.close()
+        if user and check_password_hash(user["password"], password):
+            session["user_id"] = user["id"]
+            session["user_name"] = user["name"]
+            return redirect(safe_next(nxt))
+        error = "Wrong email or password."
+    return render_template("login.html", error=error, email=email, next=nxt)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("home"))
 
 
 @app.route("/")
