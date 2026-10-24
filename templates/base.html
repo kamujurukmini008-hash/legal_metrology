@@ -15,6 +15,13 @@
       <a href="/scanner" class="{{ 'active' if request.path == '/scanner' }}">Scanner</a>
       <a href="/dashboard" class="{{ 'active' if request.path == '/dashboard' }}">Dashboard</a>
       <a href="/history" class="{{ 'active' if request.path == '/history' }}">History</a>
+      {% if user_name %}
+      <span class="who">Hi, {{ user_name }}</span>
+      <a href="/logout">Logout</a>
+      {% else %}
+      <a href="/login" class="{{ 'active' if request.path == '/login' }}">Login</a>
+      <a href="/signup" class="{{ 'active' if request.path == '/signup' }}">Sign up</a>
+      {% endif %}
     </div>
   </nav>
   {% block content %}{% endblock %}
